@@ -7,6 +7,8 @@ import (
 	"os"
 	"strconv"
 	"strings"
+
+	lemIn "lemin/lem-In-Lib"
 )
 
 type Node struct {
@@ -165,6 +167,12 @@ func main() {
 	content := ReadAllLines(inputFile)
 	lines := strings.Split(content, "\n")
 	lines = StrArrCleaner(lines)
+
+	isOk := lemIn.IsFormatOk(lines)
+	if isOk != "" {
+		fmt.Println(isOk)
+		return
+	}
 
 	numAnts, _ := strconv.Atoi(lines[0])
 	for i := 1; i < len(lines); i++ {

@@ -5,10 +5,9 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
-
-	lemIn "lemin/lem-In-Lib"
 )
 
 type Node struct {
@@ -70,7 +69,7 @@ func (g *Graph) BFS(source, sink string, parent map[string]string) bool {
 func (g *Graph) FordFulkerson(source, sink string) (int, [][]string) {
 	parent := make(map[string]string)
 	maxFlow := 0
-	var paths [][]string
+	var allPaths [][]string
 
 	for g.BFS(source, sink, parent) {
 		pathFlow := int(^uint(0) >> 1)
@@ -93,9 +92,9 @@ func (g *Graph) FordFulkerson(source, sink string) (int, [][]string) {
 		}
 
 		maxFlow += pathFlow
-		paths = append(paths, path)
+		allPaths = append(allPaths, path)
 	}
-	return maxFlow, paths
+	return maxFlow, allPaths
 }
 
 func min(a, b int) int {
@@ -103,6 +102,37 @@ func min(a, b int) int {
 		return a
 	}
 	return b
+}
+
+func SelectPaths(allPaths [][]string, numAnts int) [][]string {
+	// Sort paths by length
+	sort.Slice(allPaths, func(i, j int) bool {
+		return len(allPaths[i]) < len(allPaths[j])
+	})
+
+	selectedPaths := make([][]string, 0)
+	usedNodes := make(map[string]bool)
+
+	for _, path := range allPaths {
+		valid := true
+		for _, node := range path[1 : len(path)-1] {
+			if usedNodes[node] {
+				valid = false
+				break
+			}
+		}
+		if valid {
+			selectedPaths = append(selectedPaths, path)
+			for _, node := range path[1 : len(path)-1] {
+				usedNodes[node] = true
+			}
+		}
+		if len(selectedPaths) >= numAnts {
+			break
+		}
+	}
+
+	return selectedPaths
 }
 
 func SimulateAnts(numAnts int, paths [][]string) []string {
@@ -117,6 +147,11 @@ func SimulateAnts(numAnts int, paths [][]string) []string {
 		antPaths[i] = make([]string, 0)
 	}
 
+	// Distribute ants across paths
+	for i := 0; i < numAnts; i++ {
+		antPaths[i] = paths[i%len(paths)]
+	}
+
 	for {
 		moved := false
 		stepOutput := []string{}
@@ -124,7 +159,7 @@ func SimulateAnts(numAnts int, paths [][]string) []string {
 			if complete[i] {
 				continue
 			}
-			currentPath := paths[i%len(paths)]
+			currentPath := antPaths[i]
 			if antPositions[i] < len(currentPath)-1 {
 				nextNode := currentPath[antPositions[i]+1]
 				if !occupied[nextNode] {
@@ -132,7 +167,6 @@ func SimulateAnts(numAnts int, paths [][]string) []string {
 						occupied[currentPath[antPositions[i]]] = false
 					}
 					antPositions[i]++
-					antPaths[i] = append(antPaths[i], nextNode)
 					stepOutput = append(stepOutput, fmt.Sprintf("L%d-%s", i+1, nextNode))
 					occupied[nextNode] = true
 					moved = true
@@ -144,7 +178,7 @@ func SimulateAnts(numAnts int, paths [][]string) []string {
 			}
 		}
 		if len(stepOutput) > 0 {
-			lastArr = append(lastArr, (strings.Join(stepOutput, " ")))
+			lastArr = append(lastArr, strings.Join(stepOutput, " "))
 		}
 		if !moved {
 			break
@@ -167,12 +201,6 @@ func main() {
 	content := ReadAllLines(inputFile)
 	lines := strings.Split(content, "\n")
 	lines = StrArrCleaner(lines)
-
-	isOk := lemIn.IsFormatOk(lines)
-	if isOk != "" {
-		fmt.Println(isOk)
-		return
-	}
 
 	numAnts, _ := strconv.Atoi(lines[0])
 	for i := 1; i < len(lines); i++ {
@@ -202,28 +230,29 @@ func main() {
 
 	startNodeParts := strings.Fields(startNode)
 	endNodeParts := strings.Fields(endNode)
-	maxFlow, paths := g.FordFulkerson(startNodeParts[0], endNodeParts[0])
+	maxFlow, allPaths := g.FordFulkerson(startNodeParts[0], endNodeParts[0])
 	if maxFlow == 0 {
 		fmt.Println("ERROR: invalid data format")
 		return
 	}
 
-	newArr := SimulateAnts(numAnts, paths)
+	selectedPaths := SelectPaths(allPaths, numAnts)
+
+	newArr := SimulateAnts(numAnts, selectedPaths)
 	if len(newArr) == 0 {
 		fmt.Println("ERROR: invalid data format")
 		return
 	} else {
 		fmt.Printf("The maximum possible flow is %d\n", maxFlow)
-		fmt.Println("Paths with flow:")
-		for _, path := range paths {
+		fmt.Println("Selected paths:")
+		for _, path := range selectedPaths {
 			fmt.Println(path)
 		}
 		fmt.Println("Ants' movement:")
 		for _, str := range newArr {
 			fmt.Println(str)
 		}
-		fmt.Printf("Ants arrived to end %d turns.  \n", len(newArr))
-
+		fmt.Printf("Ants arrived to end in %d turns.\n", len(newArr))
 	}
 }
 
@@ -238,7 +267,7 @@ func InputControl(args []string) (string, string, error) {
 		inputFile = args[0]
 		outputFile = args[1]
 	} else {
-		fmt.Println("Invalued input", err)
+		fmt.Println("Invalid input", err)
 		return "", "", err
 	}
 	return inputFile, outputFile, nil
@@ -280,13 +309,17 @@ func ReadAllLines(fileName string) string {
 	reader := bufio.NewReader(file)
 	for {
 		line, err = reader.ReadString('\n')
-		if err == io.EOF {
-			break
-		} else if err != nil {
+		if err != nil && err != io.EOF {
 			panic(err)
 		}
-		lineArr = append(lineArr, line)
+		if err == io.EOF {
+			if len(line) > 0 {
+				lineArr = append(lineArr, line)
+			}
+			break
+		}
+		lineArr = append(lineArr, strings.TrimRight(line, "\n"))
 	}
-	line = strings.Join(lineArr, "")
+	line = strings.Join(lineArr, "\n")
 	return line
 }
